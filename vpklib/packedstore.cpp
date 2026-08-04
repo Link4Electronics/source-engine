@@ -152,6 +152,96 @@ static inline int SkipAllFilesInDir( char const * & pData )
 	return nHighestChunkIndex;
 }
 
+// VPK files are little-endian on disk. On big-endian hosts the header and
+// directory tree must be byte-swapped after being read in. All of the fixed
+// size fields are swapped in place so the rest of the code can keep treating
+// the directory data as native-endian (file and directory name strings are
+// byte data and are left untouched).
+#if defined( VALVE_BIG_ENDIAN )
+
+static inline void SwapLE16InPlace( void *pData )
+{
+	uint16 val;
+	Q_memcpy( &val, pData, sizeof( val ) );
+	val = LittleShort( val );
+	Q_memcpy( pData, &val, sizeof( val ) );
+}
+
+static inline uint16 ReadLE16( const void *pData )
+{
+	uint16 val;
+	Q_memcpy( &val, pData, sizeof( val ) );
+	return LittleShort( val );
+}
+
+static inline void SwapLE32InPlace( void *pData )
+{
+	uint32 val;
+	Q_memcpy( &val, pData, sizeof( val ) );
+	val = LittleLong( val );
+	Q_memcpy( pData, &val, sizeof( val ) );
+}
+
+static void ByteSwapDirHeader( VPKDirHeader_t &dirHeader )
+{
+	SwapLE32InPlace( &dirHeader.m_nHeaderMarker );
+	SwapLE32InPlace( &dirHeader.m_nVersion );
+	SwapLE32InPlace( &dirHeader.m_nDirectorySize );
+	SwapLE32InPlace( &dirHeader.m_nEmbeddedChunkSize );
+	SwapLE32InPlace( &dirHeader.m_nChunkHashesSize );
+	SwapLE32InPlace( &dirHeader.m_nSelfHashesSize );
+	SwapLE32InPlace( &dirHeader.m_nSignatureSize );
+}
+
+static void ByteSwapDirectoryTree( char *pData, char *pEnd )
+{
+	while ( pData < pEnd && *pData )				// for each extension
+	{
+		pData += 1 + V_strlen( pData );
+		while ( pData < pEnd && *pData )			// for each directory
+		{
+			pData += 1 + V_strlen( pData );
+			while ( pData < pEnd && *pData )		// for each file
+			{
+				pData += 1 + V_strlen( pData );
+				if ( pData + 6 > pEnd )
+					return;
+				SwapLE32InPlace( pData );			// m_nFileCRC
+				pData += sizeof( uint32 );
+
+				uint16 nMetaDataSize = ReadLE16( pData );
+				SwapLE16InPlace( pData );			// m_nMetaDataSize
+				pData += sizeof( uint16 );
+
+				// swap each CFilePartDescr until the 0xffff end marker
+				while ( pData + 2 <= pEnd && ReadLE16( pData ) != PACKFILEINDEX_END )
+				{
+					if ( pData + 10 > pEnd )
+						return;
+					SwapLE16InPlace( pData );		// m_nFileNumber
+					pData += sizeof( PackFileIndex_t );
+					SwapLE32InPlace( pData );		// m_nFileDataOffset
+					pData += sizeof( uint32 );
+					SwapLE32InPlace( pData );		// m_nFileDataSize
+					pData += sizeof( uint32 );
+				}
+				if ( pData + 2 > pEnd )
+					return;
+				pData += sizeof( PackFileIndex_t );	// skip 0xffff end marker
+				pData += nMetaDataSize;				// metadata is raw bytes
+			}
+			if ( pData >= pEnd )
+				return;
+			pData++;								// skip directory end marker
+		}
+		if ( pData >= pEnd )
+			return;
+		pData++;									// skip extension end marker
+	}
+}
+
+#endif // VALVE_BIG_ENDIAN
+
 
 CFileHeaderFixedData *CPackedStore::FindFileEntry( char const *pDirname, char const *pBaseName, char const *pExtension, uint8 **pExtBaseOut , uint8 **pNameBaseOut )
 {
@@ -308,8 +398,23 @@ CPackedStore::CPackedStore( char const *pFileBasename, char *pszFName, IBaseFile
 			// first, check if it is the new versioned variant
 			VPKDirHeader_t dirHeader;
 			// try to read the header.
+			bool bReadHeader = ( dirFile.Read( &dirHeader, sizeof( dirHeader ) ) == sizeof( dirHeader ) );
+#if defined( VALVE_BIG_ENDIAN )
+			if ( bReadHeader )
+			{
+				Msg( "VPK RAW %s: %08x %08x %08x %08x %08x %08x %08x\n", pszFName,
+					dirHeader.m_nHeaderMarker, dirHeader.m_nVersion, dirHeader.m_nDirectorySize,
+					dirHeader.m_nEmbeddedChunkSize, dirHeader.m_nChunkHashesSize,
+					dirHeader.m_nSelfHashesSize, dirHeader.m_nSignatureSize );
+				ByteSwapDirHeader( dirHeader );
+			}
+			else
+			{
+				Msg( "VPK NOHDR %s: size %d\n", pszFName, ( int )dirFile.Size() );
+			}
+#endif
 			if ( 
-				( dirFile.Read( &dirHeader, sizeof( dirHeader ) ) == sizeof( dirHeader ) ) &&
+				bReadHeader &&
 				( dirHeader.m_nHeaderMarker == VPK_HEADER_MARKER ) )
 			{
 				if ( dirHeader.m_nVersion == VPK_PREVIOUS_VERSION ) 
@@ -343,6 +448,12 @@ CPackedStore::CPackedStore( char const *pFileBasename, char *pszFName, IBaseFile
 			m_nDirectoryDataSize = dirHeader.m_nDirectorySize;
 			m_DirectoryData.SetCount( nSize );
 			dirFile.MustRead( DirectoryData(), nSize );
+#if defined( VALVE_BIG_ENDIAN )
+			Msg( "VPK SWP %s: hdr=%08x ver=%d dir=%u\n", pszFName,
+				dirHeader.m_nHeaderMarker, dirHeader.m_nVersion, dirHeader.m_nDirectorySize );
+			ByteSwapDirectoryTree( reinterpret_cast< char * >( DirectoryData() ),
+				reinterpret_cast< char * >( DirectoryData() ) + m_nDirectoryDataSize );
+#endif
 			// now, if we are opening for write, read the entire contents of the embedded data chunk in the dir into ram
 			if ( bOpenForWrite && bNewFileFormat )
 			{
@@ -375,6 +486,14 @@ CPackedStore::CPackedStore( char const *pFileBasename, char *pszFName, IBaseFile
 			int ctHashes = cbVecHashes/sizeof(m_vecChunkHashFraction[0]);
 			m_vecChunkHashFraction.EnsureCount( ctHashes );
 			dirFile.MustRead( m_vecChunkHashFraction.Base(), cbVecHashes );
+#if defined( VALVE_BIG_ENDIAN )
+			FOR_EACH_VEC( m_vecChunkHashFraction, i )
+			{
+				SwapLE32InPlace( &m_vecChunkHashFraction[i].m_nPackFileNumber );
+				SwapLE32InPlace( &m_vecChunkHashFraction[i].m_nFileFraction );
+				SwapLE32InPlace( &m_vecChunkHashFraction[i].m_cbChunkLen );
+			}
+#endif
 			FOR_EACH_VEC( m_vecChunkHashFraction, i )
 			{
 				int idxFound = m_vecChunkHashFraction.Find( m_vecChunkHashFraction[i] );
@@ -413,12 +532,18 @@ CPackedStore::CPackedStore( char const *pFileBasename, char *pszFName, IBaseFile
 				// Read the public key
 				uint32 cubPublicKey = 0;
 				dirFile.MustRead( &cubPublicKey, sizeof(cubPublicKey) );
+#if defined( VALVE_BIG_ENDIAN )
+				SwapLE32InPlace( &cubPublicKey );
+#endif
 				m_SignaturePublicKey.SetCount( cubPublicKey );
 				dirFile.MustRead( m_SignaturePublicKey.Base(), cubPublicKey );
 
 				// Read the private key
 				uint32 cubSignature = 0;
 				dirFile.MustRead( &cubSignature, sizeof(cubSignature) );
+#if defined( VALVE_BIG_ENDIAN )
+				SwapLE32InPlace( &cubSignature );
+#endif
 				m_Signature.SetCount( cubSignature );
 				dirFile.MustRead( m_Signature.Base(), cubSignature );
 			}

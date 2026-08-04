@@ -94,7 +94,7 @@ static ISzAlloc g_Alloc = { SzAlloc, SzFree };
 bool CLZMA::IsCompressed( unsigned char *pInput )
 {
 	lzma_header_t *pHeader = (lzma_header_t *)pInput;
-	if ( pHeader && pHeader->id == LZMA_ID )
+	if ( pHeader && LittleLong( pHeader->id ) == LZMA_ID )
 	{
 		return true;
 	}
@@ -111,7 +111,7 @@ bool CLZMA::IsCompressed( unsigned char *pInput )
 unsigned int CLZMA::GetActualSize( unsigned char *pInput )
 {
 	lzma_header_t *pHeader = (lzma_header_t *)pInput;
-	if ( pHeader && pHeader->id == LZMA_ID )
+	if ( pHeader && LittleLong( pHeader->id ) == LZMA_ID )
 	{
 		return LittleLong( pHeader->actualSize );
 	}
@@ -128,7 +128,7 @@ unsigned int CLZMA::GetActualSize( unsigned char *pInput )
 unsigned int CLZMA::Uncompress( unsigned char *pInput, unsigned char *pOutput )
 {
 	lzma_header_t *pHeader = (lzma_header_t *)pInput;
-	if ( pHeader->id != LZMA_ID )
+	if ( LittleLong( pHeader->id ) != LZMA_ID )
 	{
 		// not ours
 		return false;

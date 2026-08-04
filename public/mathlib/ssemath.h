@@ -10,6 +10,8 @@
 #include <xboxmath.h>
 #elif defined(__arm__) || defined(__aarch64__)
 #include "sse2neon.h"
+#elif defined(__powerpc__)
+#include "simdEmulation.h"
 #else
 #include <xmmintrin.h>
 #endif

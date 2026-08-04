@@ -27,6 +27,10 @@
 #include "sse2neon.h"
 #endif
 
+#if !defined (__SSE__) && !defined(__arm__) && !defined(__aarch64__)
+#include "simdEmulation.h"
+#endif
+
 // forward declarations
 class Vector;
 class Vector2D;

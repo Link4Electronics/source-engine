@@ -53,7 +53,25 @@ inline bool ThreadInterlockedAssignIf128( int128 volatile * pDest, const int128 
     // We do not want the original comparand modified by the swap
     // so operate on a local copy.
     int128 local_comparand = comparand;
+#if defined( __GCC_HAVE_SYNC_COMPARE_AND_SWAP_16 )
 	return __sync_bool_compare_and_swap( pDest, local_comparand, value );
+#else
+	// Targets without a native 128-bit compare-and-swap instruction
+	// (e.g. PowerPC G5 / 970: LQARX/STQCX only exist on POWER8+) cannot
+	// emit __sync_bool_compare_and_swap_16 inline, and libatomic is not
+	// linked into the engine, so emulate the 16-byte read-modify-write
+	// with a global spinlock.  The tslist lock-free algorithm only relies
+	// on the compare-and-swap being atomic with respect to other
+	// operations on the same location, which a global lock preserves.
+	static volatile int s_tslistlock = 0;
+	while ( __sync_lock_test_and_set( &s_tslistlock, 1 ) ) { }
+	int128 local_value = *pDest;
+	bool bResult = ( local_value == local_comparand );
+	if ( bResult )
+		*pDest = value;
+	__sync_lock_release( &s_tslistlock );
+	return bResult;
+#endif
 }
 #endif
 

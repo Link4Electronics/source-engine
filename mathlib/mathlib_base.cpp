@@ -3277,7 +3277,11 @@ void MathLib_Init( float gamma, float texGamma, float brightness, int overbright
 		s_b3DNowEnabled = false;
 	}
 
+#if defined(__powerpc__) && defined(__ALTIVEC__)
+	if ( bAllowSSE )
+#else
 	if ( bAllowSSE && pi.m_bSSE )
+#endif
 	{
 		s_bSSEEnabled = true;
 

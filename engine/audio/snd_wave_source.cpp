@@ -375,6 +375,17 @@ void CAudioSourceWave::ConvertSamples( char *pData, int sampleCount )
 				pData++;
 			}
 		}
+		else if ( m_bits == 16 )
+		{
+#if defined( VALVE_BIG_ENDIAN )
+			short *pSample = (short *)pData;
+			for ( int i = 0; i < sampleCount*m_channels; i++ )
+			{
+				*pSample = LittleShort( *pSample );
+				pSample++;
+			}
+#endif
+		}
 	}
 }
 

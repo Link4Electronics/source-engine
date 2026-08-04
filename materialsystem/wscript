@@ -59,7 +59,7 @@ def build(bld):
 
 	defines = []
 
-	libs = ['tier0','tier1','tier2','vstdlib','mathlib','bitmap','shaderlib','vtf']
+	libs = ['tier0','vtf','tier1','tier2','vstdlib','mathlib','bitmap','shaderlib']
 
 	install_path = bld.env.LIBDIR
 

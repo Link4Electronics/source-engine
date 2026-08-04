@@ -2054,6 +2054,27 @@ bool CShaderManager::LoadAndCreateShaders_Dynamic( ShaderLookup_t &lookup, bool 
 #endif
 
 //-----------------------------------------------------------------------------
+// .vcs shader cache files are little-endian on disk. On big-endian hosts the
+// fixed size header/table fields and the DWORD shader tokens must be swapped
+// after being read in.
+//-----------------------------------------------------------------------------
+#if defined( VALVE_BIG_ENDIAN )
+static inline uint32 ByteSwapDWord( uint32 v )
+{
+	return ( ( v & 0xff ) << 24 ) | ( ( v & 0xff00 ) << 8 ) | ( ( v >> 8 ) & 0xff00 ) | ( ( v >> 24 ) & 0xff );
+}
+static inline void ByteSwapDWords( void *pData, size_t nBytes )
+{
+	uint32 *p = reinterpret_cast< uint32 * >( pData );
+	size_t nWords = nBytes / sizeof( uint32 );
+	for ( size_t i = 0; i < nWords; i++ )
+	{
+		p[i] = ByteSwapDWord( p[i] );
+	}
+}
+#endif
+
+//-----------------------------------------------------------------------------
 // Open the shader file, optionally gets the header
 //-----------------------------------------------------------------------------
 FileHandle_t CShaderManager::OpenFileAndLoadHeader( const char *pFileName, ShaderHeader_t *pHeader )
@@ -2068,6 +2089,9 @@ FileHandle_t CShaderManager::OpenFileAndLoadHeader( const char *pFileName, Shade
 	{
 		// read the header 
 		g_pFullFileSystem->Read( pHeader, sizeof( ShaderHeader_t ), fp );
+#if defined( VALVE_BIG_ENDIAN )
+		ByteSwapDWords( pHeader, sizeof( ShaderHeader_t ) );
+#endif
 
 		switch ( pHeader->m_nVersion )
 		{
@@ -2206,6 +2230,11 @@ bool CShaderManager::CreateDynamicCombos_Ver4( void *pContext, uint8 *pComboBuff
 			nByteCodeSize = nOriginalSize;
 		}
 
+#if defined( VALVE_BIG_ENDIAN )
+		// shader bytecode is a sequence of DWORD tokens, little-endian on disk
+		ByteSwapDWords( pByteCode, nByteCodeSize );
+#endif
+
 #if defined( WRITE_ASSEMBLY )
 		DisassembleShader( pLookup, i, pByteCode );
 #endif
@@ -2274,6 +2303,9 @@ bool CShaderManager::CreateDynamicCombos_Ver5( void *pContext, uint8 *pComboBuff
 	while ( bOK )
 	{
 		uint32 nBlockSize = NextULONG( pCompressedShaders );
+#if defined( VALVE_BIG_ENDIAN )
+		nBlockSize = ByteSwapDWord( nBlockSize );
+#endif
 		if ( nBlockSize == 0xffffffff )	
 		{
 			// any more blocks?
@@ -2332,7 +2364,13 @@ bool CShaderManager::CreateDynamicCombos_Ver5( void *pContext, uint8 *pComboBuff
 				bOK = false;
 			}
 		}
-		
+
+#if defined( VALVE_BIG_ENDIAN )
+		// the unpacked block is a sequence of DWORDs (combo id, shader size,
+		// then the shader tokens), all little-endian on disk
+		ByteSwapDWords( pUnpackBuffer, nBlockSize );
+#endif
+
 		uint8 *pReadPtr = pUnpackBuffer;
 		while ( pReadPtr < pUnpackBuffer+nBlockSize )
 		{
@@ -2600,15 +2638,34 @@ bool CShaderManager::LoadAndCreateShaders( ShaderLookup_t &lookup, bool bVertexS
 			// cache the dictionary
 			pFileCache->m_StaticComboRecords.EnsureCount( pHeader->m_nNumStaticCombos );
 			g_pFullFileSystem->Read( pFileCache->m_StaticComboRecords.Base(), pHeader->m_nNumStaticCombos * sizeof( StaticComboRecord_t ), hFile );
+#if defined( VALVE_BIG_ENDIAN )
+			FOR_EACH_VEC( pFileCache->m_StaticComboRecords, i )
+			{
+				StaticComboRecord_t &rec = pFileCache->m_StaticComboRecords[i];
+				rec.m_nStaticComboID = ByteSwapDWord( rec.m_nStaticComboID );
+				rec.m_nFileOffset = ByteSwapDWord( rec.m_nFileOffset );
+			}
+#endif
 			if ( pFileCache->IsVersion6() )
 			{
 				// read static combo alias records
 				int nNumDups;
 				g_pFullFileSystem->Read( &nNumDups, sizeof( nNumDups ), hFile );
+#if defined( VALVE_BIG_ENDIAN )
+				nNumDups = ByteSwapDWord( ( uint32 )nNumDups );
+#endif
 				if ( nNumDups )
 				{
 					pFileCache->m_StaticComboDupRecords.EnsureCount( nNumDups );
 					g_pFullFileSystem->Read( pFileCache->m_StaticComboDupRecords.Base(), nNumDups * sizeof( StaticComboAliasRecord_t ), hFile );
+#if defined( VALVE_BIG_ENDIAN )
+					FOR_EACH_VEC( pFileCache->m_StaticComboDupRecords, i )
+					{
+						StaticComboAliasRecord_t &rec = pFileCache->m_StaticComboDupRecords[i];
+						rec.m_nStaticComboID = ByteSwapDWord( rec.m_nStaticComboID );
+						rec.m_nSourceStaticCombo = ByteSwapDWord( rec.m_nSourceStaticCombo );
+					}
+#endif
 				}
 			}
 
@@ -2639,6 +2696,13 @@ bool CShaderManager::LoadAndCreateShaders( ShaderLookup_t &lookup, bool bVertexS
 		lookup.m_pComboDictionary = new ShaderDictionaryEntry_t[pHeader->m_nDynamicCombos];
 		g_pFullFileSystem->Seek( hFile, nDictionaryOffset + lookup.m_nStaticIndex * sizeof( ShaderDictionaryEntry_t ), FILESYSTEM_SEEK_HEAD );
 		g_pFullFileSystem->Read( lookup.m_pComboDictionary, pHeader->m_nDynamicCombos * sizeof( ShaderDictionaryEntry_t ), hFile );
+#if defined( VALVE_BIG_ENDIAN )
+		for ( i = 0; i < pHeader->m_nDynamicCombos; i++ )
+		{
+			lookup.m_pComboDictionary[i].m_Offset = ByteSwapDWord( ( uint32 )lookup.m_pComboDictionary[i].m_Offset );
+			lookup.m_pComboDictionary[i].m_Size = ByteSwapDWord( ( uint32 )lookup.m_pComboDictionary[i].m_Size );
+		}
+#endif
 
 		// want single read of all this shader's dynamic combos into a target buffer
 		// shaders are written sequentially, determine starting offset and length

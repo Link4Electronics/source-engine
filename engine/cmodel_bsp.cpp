@@ -24,6 +24,7 @@ extern IMaterialSystem *materials;
 #include "vphysics_interface.h"
 #include "sys_dll.h"
 #include "tier2/tier2.h"
+#include "tier1/byteswap.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -1055,12 +1056,23 @@ void CollisionBSPData_LoadPhysics( CCollisionBSPData *pBSPData )
 	do
 	{
 		memcpy( &physModel, ptr, sizeof(physModel) );
+#if defined( VALVE_BIG_ENDIAN )
+		{
+			CByteswap swap;
+			swap.ActivateByteSwapping( true );
+			swap.SwapFieldsToTargetEndian<dphysmodel_t>( &physModel, 1 );
+		}
+#endif
 		ptr += sizeof(physModel);
 
 		if ( physModel.dataSize > 0 )
 		{
 			cmodel_t *pModel = &pBSPData->map_cmodels[ physModel.modelIndex ];
+#if defined( VALVE_BIG_ENDIAN )
+			physcollision->VCollideLoad( &pModel->vcollisionData, physModel.solidCount, (const char *)ptr, physModel.dataSize + physModel.keydataSize, true );
+#else
 			physcollision->VCollideLoad( &pModel->vcollisionData, physModel.solidCount, (const char *)ptr, physModel.dataSize + physModel.keydataSize );
+#endif
 			ptr += physModel.dataSize;
 			ptr += physModel.keydataSize;
 		}

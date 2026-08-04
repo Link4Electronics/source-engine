@@ -482,7 +482,11 @@ bool bf_write::WriteBits(const void *pInData, int nBits)
 		m_iCurBit += numbits;
 	}
 
-	// X360TBD: Can't write dwords in WriteBits because they'll get swapped
+	// X360TBD: Can't write dwords in WriteBits because they'll get swapped.
+	// On big-endian hosts the native dword reads/stores below would also
+	// misplace bytes relative to the little-endian bit stream, so fall back
+	// to the endian-safe WriteUBitLong path.
+#if defined( VALVE_LITTLE_ENDIAN )
 	if ( IsPC() && nBitsLeft >= 32 )
 	{
 		uint32 iBitsRight = (m_iCurBit & 31);
@@ -514,6 +518,7 @@ bool bf_write::WriteBits(const void *pInData, int nBits)
 			m_iCurBit += 32;
 		}
 	}
+#endif
 
 
 	// write remaining bytes
@@ -892,7 +897,10 @@ void bf_read::ReadBits(void *pOutData, int nBits)
 		nBitsLeft -= 8;
 	}
 
-	// X360TBD: Can't read dwords in ReadBits because they'll get swapped
+	// X360TBD: Can't read dwords in ReadBits because they'll get swapped.
+	// Same on big-endian hosts: the native dword store would write the bytes
+	// in the wrong order for the little-endian bit stream.
+#if defined( VALVE_LITTLE_ENDIAN )
 	if ( IsPC() )
 	{
 		// read dwords
@@ -903,6 +911,7 @@ void bf_read::ReadBits(void *pOutData, int nBits)
 			nBitsLeft -= 32;
 		}
 	}
+#endif
 
 	// read remaining bytes
 	while ( nBitsLeft >= 8 )

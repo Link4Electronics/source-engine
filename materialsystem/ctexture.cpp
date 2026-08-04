@@ -4194,6 +4194,10 @@ bool SLoadTextureBitsFromFile( IVTFTexture **ppOutVtfTexture, FileHandle_t hFile
 		int nBytesRead = g_pFullFileSystem->ReadEx( buf.Base(), nBytesOptimalRead, Min( nHeaderSize, ( int ) g_pFullFileSystem->Size( hFile ) ), hFile ); // only read as much as the file has
 		buf.SeekPut( CUtlBuffer::SEEK_HEAD, nBytesRead );
 		nBytesRead = nHeaderSize = ( ( VTFFileBaseHeader_t * ) buf.Base() )->headerSize;
+		// The VTF file header is stored little-endian on disk.
+#ifdef VALVE_BIG_ENDIAN
+		nBytesRead = nHeaderSize = SwapLong( nHeaderSize );
+#endif
 		g_pFullFileSystem->Seek( hFile, nHeaderSize, FILESYSTEM_SEEK_HEAD );
 	}
 

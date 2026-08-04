@@ -523,8 +523,11 @@ def configure(conf):
 
 	if conf.env.DEST_CPU in ['x86', 'x86_64']:
 		flags += ['-mfpmath=sse']
-	elif conf.env.DEST_CPU in ['arm', 'aarch64']:
+	elif conf.env.DEST_CPU in ['arm', 'aarch64', 'powerpc', 'ppc64']:
 		flags += ['-fsigned-char']
+
+	if conf.env.DEST_CPU in ['powerpc', 'ppc64']:
+		flags += ['-DSDL_DISABLE_IMMINTRIN_H', '-mcpu=power4', '-maltivec']
 
 	if conf.env.DEST_CPU == 'arm':
 		flags += ['-march=armv7-a', '-mfpu=neon-vfpv4']

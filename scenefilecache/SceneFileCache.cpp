@@ -73,6 +73,62 @@ void CSceneFileCache::Disconnect()
 {
 }
 
+#if defined( VALVE_BIG_ENDIAN )
+//-----------------------------------------------------------------------------
+// .image files are cooked little-endian for the PC. On big-endian hosts the
+// fixed size header/table/summary fields must be byte-swapped in place after
+// the file is read in so the native struct accesses below work correctly.
+//-----------------------------------------------------------------------------
+static inline uint32 ByteSwapSceneImageDWord( uint32 v )
+{
+	return ( ( v & 0xff ) << 24 ) | ( ( v & 0xff00 ) << 8 ) | ( ( v >> 8 ) & 0xff00 ) | ( ( v >> 24 ) & 0xff );
+}
+
+static void ByteSwapSceneImage( CUtlBuffer &buf )
+{
+	SceneImageHeader_t *pHeader = (SceneImageHeader_t *)buf.Base();
+	if ( !pHeader )
+	{
+		return;
+	}
+
+	pHeader->nId = ByteSwapSceneImageDWord( pHeader->nId );
+	pHeader->nVersion = ByteSwapSceneImageDWord( pHeader->nVersion );
+	pHeader->nNumScenes = ByteSwapSceneImageDWord( pHeader->nNumScenes );
+	pHeader->nNumStrings = ByteSwapSceneImageDWord( pHeader->nNumStrings );
+	pHeader->nSceneEntryOffset = ByteSwapSceneImageDWord( pHeader->nSceneEntryOffset );
+
+	// string table: nNumStrings offsets, immediately after the header
+	unsigned int *pTable = (unsigned int *)( (byte *)pHeader + sizeof( SceneImageHeader_t ) );
+	for ( int i = 0; i < pHeader->nNumStrings; i++ )
+	{
+		pTable[i] = ByteSwapSceneImageDWord( pTable[i] );
+	}
+
+	// directory entries, sorted by filename crc
+	SceneImageEntry_t *pEntries = (SceneImageEntry_t *)( (byte *)pHeader + pHeader->nSceneEntryOffset );
+	for ( int i = 0; i < pHeader->nNumScenes; i++ )
+	{
+		pEntries[i].crcFilename = ByteSwapSceneImageDWord( pEntries[i].crcFilename );
+		pEntries[i].nDataOffset = ByteSwapSceneImageDWord( pEntries[i].nDataOffset );
+		pEntries[i].nDataLength = ByteSwapSceneImageDWord( pEntries[i].nDataLength );
+		pEntries[i].nSceneSummaryOffset = ByteSwapSceneImageDWord( pEntries[i].nSceneSummaryOffset );
+	}
+
+	// per-scene summaries: msecs, numSounds, then the variable length soundStrings
+	for ( int i = 0; i < pHeader->nNumScenes; i++ )
+	{
+		SceneImageSummary_t *pSummary = (SceneImageSummary_t *)( (byte *)pHeader + pEntries[i].nSceneSummaryOffset );
+		pSummary->msecs = ByteSwapSceneImageDWord( pSummary->msecs );
+		pSummary->numSounds = ByteSwapSceneImageDWord( pSummary->numSounds );
+		for ( int j = 0; j < pSummary->numSounds; j++ )
+		{
+			pSummary->soundStrings[j] = ByteSwapSceneImageDWord( pSummary->soundStrings[j] );
+		}
+	}
+}
+#endif
+
 InitReturnVal_t CSceneFileCache::Init()
 {
 	const char *pSceneImageName = IsX360() ? "scenes/scenes.360.image" : "scenes/scenes.image";
@@ -84,11 +140,28 @@ InitReturnVal_t CSceneFileCache::Init()
 		if ( filesystem->ReadFile( pSceneImageName, "GAME", m_SceneImageFile ) )
 		{
 			SceneImageHeader_t *pHeader = (SceneImageHeader_t *)m_SceneImageFile.Base();
-			if ( pHeader->nId != SCENE_IMAGE_ID || 
+#if defined( VALVE_BIG_ENDIAN )
+			if ( pHeader->nId == SCENE_IMAGE_ID && pHeader->nVersion == SCENE_IMAGE_VERSION )
+			{
+				// already native byte order
+			}
+			else if ( LittleLong( pHeader->nId ) == SCENE_IMAGE_ID &&
+				LittleLong( pHeader->nVersion ) == SCENE_IMAGE_VERSION )
+			{
+				// little-endian image, byte-swap in place
+				ByteSwapSceneImage( m_SceneImageFile );
+			}
+			else
+			{
+				Error( "CSceneFileCache: Bad scene image file %s\n", pSceneImageName );
+			}
+#else
+			if ( pHeader->nId != SCENE_IMAGE_ID ||
 				pHeader->nVersion != SCENE_IMAGE_VERSION )
 			{
 				Error( "CSceneFileCache: Bad scene image file %s\n", pSceneImageName );
 			}
+#endif
 		}
 		else
 		{

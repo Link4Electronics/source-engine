@@ -635,6 +635,39 @@ void CMDLCache::Disconnect()
 
 
 //-----------------------------------------------------------------------------
+// True on a big-endian PC host (e.g. ppc64 Linux) that must convert the
+// little-endian PC model files to native big-endian at load time. The X360
+// is excluded because it reads pre-swapped .360 files instead.
+//-----------------------------------------------------------------------------
+static inline bool IsBigEndianPC()
+{
+	return CByteswap::IsMachineBigEndian() && !IsX360();
+}
+
+//-----------------------------------------------------------------------------
+// Converts little-endian PC model data to native big-endian.
+// pDest must have room for at least nDataSize + BYTESWAP_ALIGNMENT_PADDING
+// bytes. Returns the size of the swapped data, or 0 on failure.
+//-----------------------------------------------------------------------------
+static int ByteswapModelDataForBE( MDLCacheDataType_t type, void *pDest, const void *pData, int nDataSize )
+{
+	switch ( type )
+	{
+	case MDLCACHE_STUDIOHDR:
+		return StudioByteSwap::ByteswapMDL( pDest, pData, nDataSize );
+	case MDLCACHE_VERTEXES:
+		return StudioByteSwap::ByteswapVVD( pDest, pData, nDataSize );
+	case MDLCACHE_STUDIOHWDATA:
+		return StudioByteSwap::ByteswapVTX( pDest, pData, nDataSize );
+	case MDLCACHE_VCOLLIDE:
+		return StudioByteSwap::ByteswapPHY( pDest, pData, nDataSize );
+	default:
+		return 0;
+	}
+}
+
+
+//-----------------------------------------------------------------------------
 // Query Interface
 //-----------------------------------------------------------------------------
 void *CMDLCache::QueryInterface( const char *pInterfaceName )
@@ -701,10 +734,12 @@ InitReturnVal_t CMDLCache::Init()
 		m_pAnimBlockCacheSection = g_pDataCache->AddSection( this, MODEL_CACHE_ANIMBLOCK_SECTION_NAME, limits );
 	}
 
-	if ( IsX360() )
+	if ( IsX360() || IsBigEndianPC() )
 	{
-		// By default, source data is assumed to be non-native to the 360.
+		// By default, source data is assumed to be non-native to big-endian
+		// targets (the X360, or a big-endian PC port such as ppc64).
 		StudioByteSwap::ActivateByteSwapping( true );
+		StudioByteSwap::SourceIsNative( false );
 		StudioByteSwap::SetCollisionInterface( g_pPhysicsCollision );
 	}
 	m_bLostVideoMemory = false;
@@ -1956,6 +1991,24 @@ bool CMDLCache::ReadFileNative( char *pFileName, const char *pPath, CUtlBuffer &
 		// Read the PC version
 		bOk = g_pFullFileSystem->ReadFile( pFileName, pPath, buf, nMaxBytes );
 
+		if( bOk && type == MDLCACHE_STUDIOHDR && IsBigEndianPC() )
+		{
+			// Convert the little-endian PC .mdl to native big-endian.
+			CUtlBuffer swapped;
+			swapped.EnsureCapacity( buf.TellPut() + BYTESWAP_ALIGNMENT_PADDING );
+			int bytes = ByteswapModelDataForBE( type, swapped.Base(), buf.Base(), buf.TellPut() );
+			if ( bytes > 0 )
+			{
+				swapped.SeekPut( CUtlBuffer::SEEK_HEAD, bytes );
+				buf.Purge();
+				buf.Put( swapped.Base(), bytes );
+			}
+			else
+			{
+				DevWarning( "MDLCache: Failed to byte-swap %s\n", pFileName );
+			}
+		}
+
 		if( bOk && type == MDLCACHE_STUDIOHDR )
 		{
 			studiohdr_t* pStudioHdr = ( studiohdr_t* ) buf.PeekGet();
@@ -2664,6 +2717,12 @@ bool CMDLCache::VerifyHeaders( studiohdr_t *pStudioHdr )
 	vertexFileHeader_t *pVertexHdr = (vertexFileHeader_t*)vvdHeader.PeekGet();
 
 	// check
+	if ( IsBigEndianPC() )
+	{
+		pVertexHdr->id = LittleLong( pVertexHdr->id );
+		pVertexHdr->version = LittleLong( pVertexHdr->version );
+		pVertexHdr->checksum = LittleLong( pVertexHdr->checksum );
+	}
 	if (( pVertexHdr->id != MODEL_VERTEX_FILE_ID ) ||
 		( pVertexHdr->version != MODEL_VERTEX_FILE_VERSION ) ||
 		( pVertexHdr->checksum != pStudioHdr->checksum ))
@@ -2686,6 +2745,11 @@ bool CMDLCache::VerifyHeaders( studiohdr_t *pStudioHdr )
 
 	// check
 	OptimizedModel::FileHeader_t *pVtxHdr = (OptimizedModel::FileHeader_t*)vtxHeader.PeekGet();
+	if ( IsBigEndianPC() )
+	{
+		pVtxHdr->version = LittleLong( pVtxHdr->version );
+		pVtxHdr->checkSum = LittleLong( pVtxHdr->checkSum );
+	}
 	if (( pVtxHdr->version != OPTIMIZED_MODEL_FILE_VERSION ) ||
 		( pVtxHdr->checkSum != pStudioHdr->checksum ))
 	{
@@ -3139,7 +3203,30 @@ int CMDLCache::ProcessPendingAsync( intp iAsync )
 	case MDLCACHE_STUDIOHWDATA:
 	case MDLCACHE_VCOLLIDE:
 		{
-			ProcessDataIntoCache( pInfo->hModel, pInfo->type, 0, pData, nBytesRead, status == FSASYNC_OK );
+			void *pDataToProcess = pData;
+			int nBytesToProcess = nBytesRead;
+			void *pSwapped = NULL;
+			if ( IsBigEndianPC() && pData && nBytesRead > 0 && status == FSASYNC_OK )
+			{
+				// convert the little-endian PC data to native big-endian
+				pSwapped = malloc( nBytesRead + BYTESWAP_ALIGNMENT_PADDING );
+				int bytes = ByteswapModelDataForBE( pInfo->type, pSwapped, pData, nBytesRead );
+				if ( bytes > 0 )
+				{
+					pDataToProcess = pSwapped;
+					nBytesToProcess = bytes;
+				}
+				else
+				{
+					free( pSwapped );
+					pSwapped = NULL;
+				}
+			}
+			ProcessDataIntoCache( pInfo->hModel, pInfo->type, 0, pDataToProcess, nBytesToProcess, status == FSASYNC_OK );
+			if ( pSwapped )
+			{
+				free( pSwapped );
+			}
 			g_pFullFileSystem->FreeOptimalReadBuffer( pData );
 			break;
 		}
@@ -3574,7 +3661,30 @@ void CMDLCache::ProcessQueuedData( ModelParts_t *pModelParts, bool bHeaderOnly )
 		DEBUG_SCOPE_TIMER(mdl);
 		pData = pModelParts->Buffers[ModelParts_t::BUFFER_MDL].Base();
 		nSize = pModelParts->Buffers[ModelParts_t::BUFFER_MDL].TellMaxPut();
-		ProcessDataIntoCache( handle, MDLCACHE_STUDIOHDR, 0, pData, nSize, nSize != 0 );
+		void *pDataToProcess = pData;
+		int nSizeToProcess = nSize;
+		void *pSwapped = NULL;
+		if ( IsBigEndianPC() && pData && nSize > 0 )
+		{
+			// convert the little-endian PC .mdl to native big-endian
+			pSwapped = malloc( nSize + BYTESWAP_ALIGNMENT_PADDING );
+			int bytes = ByteswapModelDataForBE( MDLCACHE_STUDIOHDR, pSwapped, pData, nSize );
+			if ( bytes > 0 )
+			{
+				pDataToProcess = pSwapped;
+				nSizeToProcess = bytes;
+			}
+			else
+			{
+				free( pSwapped );
+				pSwapped = NULL;
+			}
+		}
+		ProcessDataIntoCache( handle, MDLCACHE_STUDIOHDR, 0, pDataToProcess, nSizeToProcess, nSizeToProcess != 0 );
+		if ( pSwapped )
+		{
+			free( pSwapped );
+		}
 		LockStudioHdr( handle );
 		g_pFullFileSystem->FreeOptimalReadBuffer( pData );
 		pModelParts->bHeaderLoaded = true;

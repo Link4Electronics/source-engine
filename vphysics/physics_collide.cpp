@@ -1635,14 +1635,28 @@ void CPhysicsCollision::VCollideLoad( vcollide_t *pOutput, int solidCount, const
 
 	BEGIN_IVP_ALLOCATION();
 
+	CByteswap swapObject;
+	swapObject.ActivateByteSwapping( true );
+
 	for ( int i = 0; i < solidCount; i++ )
 	{
 		int size;
 		memcpy( &size, pBuffer + position, sizeof(int) );
 		position += sizeof(int);
+		if ( swap )
+			size = LittleLong( size );
 
 		char *tmpbuf = new char[size];
 		memcpy(tmpbuf, pBuffer + position, size);
+
+		if ( swap )
+		{
+			compactsurfaceheader_t *pSolidHeader = reinterpret_cast<compactsurfaceheader_t *>(tmpbuf);
+			if ( LittleLong( pSolidHeader->vphysicsID ) == VPHYSICS_COLLISION_ID )
+			{
+				swapObject.SwapFieldsToTargetEndian( pSolidHeader );
+			}
+		}
 
 		pOutput->solids[i] = CPhysCollide::UnserializeFromBuffer( tmpbuf, size, i, swap );
 		position += size;

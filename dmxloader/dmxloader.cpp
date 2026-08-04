@@ -415,6 +415,12 @@ bool CDmxSerializer::Unserialize( CUtlBuffer &buf, int nEncodingVersion, CDmxEle
 	if ( nEncodingVersion < 0 || nEncodingVersion > 2 )
 		return false;
 
+#if defined( VALVE_BIG_ENDIAN )
+	// binary DMX payloads are cooked little-endian for the PC; make the
+	// buffer byte-swap on read so native Get* calls work on big-endian hosts
+	buf.SetBigEndian( false );
+#endif
+
 	bool bReadStringTable = nEncodingVersion >= 2;
 
 	// Keep reading until we read a NULL terminator

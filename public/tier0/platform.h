@@ -9,7 +9,7 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
-#if defined(__x86_64__) || defined(_WIN64) || defined(__aarch64__)
+#if defined(__x86_64__) || defined(_WIN64) || defined(__aarch64__) || defined(__powerpc64__) || defined(__ppc64__)
 #define PLATFORM_64BITS 1
 #endif
 
@@ -898,7 +898,7 @@ static FORCEINLINE double fsel(double fComparand, double fValGE, double fLT)
 
 		#endif
 	#endif
-#elif defined (__arm__) || defined (__aarch64__)
+#elif defined (__arm__) || defined (__aarch64__) || defined (__powerpc__)
 	inline void SetupFPUControlWord() {}
 #else
 	inline void SetupFPUControlWord()
@@ -1074,6 +1074,11 @@ inline T QWordSwapC( T dw )
 #endif
 
 #if defined( _SGI_SOURCE ) || defined( _X360 )
+#define	VALVE_BIG_ENDIAN 1
+#endif
+
+// Detect big-endian hosts (e.g. powerpc64 BE). GCC/clang always define these.
+#if !defined(VALVE_BIG_ENDIAN) && defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #define	VALVE_BIG_ENDIAN 1
 #endif
 
@@ -1258,6 +1263,10 @@ inline uint64 Plat_Rdtsc()
 	uint32 lo, hi;
 	__asm__ __volatile__ ( "rdtsc" : "=a" (lo), "=d" (hi));
 	return ( ( ( uint64 )hi ) << 32 ) | lo;
+#elif defined( __powerpc__ ) && defined( POSIX )
+	struct timespec t;
+	clock_gettime( CLOCK_REALTIME, &t);
+	return t.tv_sec * 1000000000ULL + t.tv_nsec;
 #else
 	#error
 #endif

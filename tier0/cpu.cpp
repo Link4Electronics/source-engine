@@ -22,7 +22,7 @@ const tchar* GetProcessorVendorId();
 
 static bool cpuid(uint32 function, uint32& out_eax, uint32& out_ebx, uint32& out_ecx, uint32& out_edx)
 {
-#if defined (__arm__) || defined (__aarch64__) || defined( _X360 )
+#if defined (__arm__) || defined (__aarch64__) || defined( _X360 ) || defined(__powerpc__)
 	return false;
 #elif defined(GNUC)
 
@@ -156,7 +156,7 @@ static bool IsWin98OrOlder()
 
 static bool CheckSSETechnology(void)
 {
-#if defined(__SANITIZE_ADDRESS__) || defined (__arm__)
+#if defined(__SANITIZE_ADDRESS__) || defined (__arm__) || defined (__powerpc__)
 	return false;
 #elif defined( _X360 ) || defined( _PS3 )
 	return true;
@@ -333,7 +333,7 @@ static bool CheckRDTSCTechnology(void)
 // Return the Processor's vendor identification string, or "Generic_x86" if it doesn't exist on this CPU
 const tchar* GetProcessorVendorId()
 {
-#if defined( _X360 ) || defined( _PS3 )
+#if defined( _X360 ) || defined( _PS3 ) || defined( __powerpc__ )
 	return "PPC";
 #elif defined ( __arm__ )
 	return "ARM";
@@ -376,6 +376,8 @@ const tchar* GetProcessorArchName()
         return "aarch64";
 #elif defined __arm__ || defined _M_ARM
         return "arm";
+#elif defined __powerpc__ || defined _ARCH_PPC
+        return "powerpc";
 #else
 #error "Unknown architecture"
 #endif

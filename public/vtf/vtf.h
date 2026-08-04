@@ -550,10 +550,13 @@ struct alignas(16) VTFFileHeaderV7_3_t
 typedef VTFFileHeaderV7_3_t VTFFileHeader_t;
 
 #define BYTE_POS( byteVal, shft )	uint32( uint32(uint8(byteVal)) << uint8(shft * 8) )
-#if !defined( _X360 )
+#if !defined( _X360 ) && !defined( VALVE_BIG_ENDIAN )
 #define MK_VTF_RSRC_ID(a, b, c)		uint32( BYTE_POS(a, 0) | BYTE_POS(b, 1) | BYTE_POS(c, 2) )
 #define MK_VTF_RSRCF(d)				BYTE_POS(d, 3)
 #else
+// ResourceEntryInfo is stored in the file in its native little-endian byte order.
+// On big-endian machines the raw (unswapped) value read from disk therefore has its
+// first byte in the most significant position, so build the constants accordingly.
 #define MK_VTF_RSRC_ID(a, b, c)		uint32( BYTE_POS(a, 3) | BYTE_POS(b, 2) | BYTE_POS(c, 1) )
 #define MK_VTF_RSRCF(d)				BYTE_POS(d, 0)
 #endif

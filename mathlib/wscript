@@ -40,6 +40,9 @@ def build(bld):
 		'almostequal.cpp'
 	]
 
+	if bld.env.DEST_CPU in ['powerpc', 'ppc64']:
+		source += ['sse_ppc.cpp']
+
 	includes = [
 		'.',
 		'../common',

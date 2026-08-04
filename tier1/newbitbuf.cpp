@@ -492,7 +492,10 @@ void CBitRead::ReadBits(void *pOutData, int nBits)
 		nBitsLeft -= 8;
 	}
 
-	// X360TBD: Can't read dwords in ReadBits because they'll get swapped
+	// X360TBD: Can't read dwords in ReadBits because they'll get swapped.
+	// Same on big-endian hosts: the native dword store writes bytes in the
+	// wrong order for the little-endian bit stream.
+#if defined( VALVE_LITTLE_ENDIAN )
 	if ( IsPC() )
 	{
 		// read dwords
@@ -503,6 +506,7 @@ void CBitRead::ReadBits(void *pOutData, int nBits)
 			nBitsLeft -= 32;
 		}
 	}
+#endif
 
 	// read remaining bytes
 	while ( nBitsLeft >= 8 )

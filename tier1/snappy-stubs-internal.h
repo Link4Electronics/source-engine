@@ -206,7 +206,7 @@ inline void UnalignedCopy64(const void *src, void *dst) {
 }
 
 // The following guarantees declaration of the byte swap functions.
-#ifdef WORDS_BIGENDIAN
+#if defined( WORDS_BIGENDIAN ) || defined( VALVE_BIG_ENDIAN )
 
 #ifdef HAVE_SYS_BYTEORDER_H
 #include <sys/byteorder.h>
@@ -277,7 +277,7 @@ inline uint64 bswap_64(uint64 x) {
 class LittleEndian {
  public:
   // Conversion functions.
-#ifdef WORDS_BIGENDIAN
+#if defined( WORDS_BIGENDIAN ) || defined( VALVE_BIG_ENDIAN )
 
   static uint16 FromHost16(uint16 x) { return bswap_16(x); }
   static uint16 ToHost16(uint16 x) { return bswap_16(x); }

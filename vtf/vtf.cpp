@@ -951,7 +951,7 @@ static bool ReadHeaderFromBufferPastBaseHeader( CUtlBuffer &buf, VTFFileHeader_t
 
 bool CVTFTexture::ReadHeader( CUtlBuffer &buf, VTFFileHeader_t &header )
 {
-	if ( IsX360() && SetupByteSwap( buf ) )
+	if ( SetupByteSwap( buf ) )
 	{
 		VTFFileBaseHeader_t baseHeader;
 		m_Swap.SwapFieldsToTargetEndian( &baseHeader, (VTFFileBaseHeader_t*)buf.PeekGet() );
@@ -1148,7 +1148,7 @@ bool CVTFTexture::UnserializeEx( CUtlBuffer &buf, bool bHeaderOnly, int nForceFl
 		if ( !buf.IsValid() )
 			return false;
 
-		if ( IsX360() )
+		if ( m_Swap.IsSwappingBytes() )
 		{
 			// Byte-swap the dictionary data offsets
 			for ( int k = 0; k < m_arrResourcesInfo.Count(); ++ k )

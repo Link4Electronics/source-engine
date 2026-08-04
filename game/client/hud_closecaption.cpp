@@ -618,6 +618,16 @@ public:
 
 		Assert( pData );
 
+#if defined( VALVE_BIG_ENDIAN )
+		// The caption block data is stored on disk as little-endian ucs2, swap it into native byte order
+		unsigned short *pData16 = (unsigned short *)pData->m_pBlockData;
+		for ( int i = 0; i < numReadBytes / 2; ++i )
+		{
+			unsigned short word = pData16[ i ];
+			pData16[ i ] = (unsigned short)( ( word << 8 ) | ( word >> 8 ) );
+		}
+#endif
+
 		// mark as completed in single atomic operation
 		pData->m_bLoadCompleted = true;
 	}
@@ -2599,6 +2609,12 @@ void CHudCloseCaption::InitCaptionDictionary( const char *dbfile )
 
 			// Read the header
 			filesystem->Read( &entry.m_Header, sizeof( entry.m_Header ), fh );
+#if defined( VALVE_BIG_ENDIAN )
+			// Caption files are cooked as little-endian on a PC, swap them into native byte order
+			CByteswap swap;
+			swap.ActivateByteSwapping( true );
+			swap.SwapFieldsToTargetEndian( &entry.m_Header );
+#endif
 			if ( entry.m_Header.magic != COMPILED_CAPTION_FILEID )
 				Error( "Invalid file id for %s\n", fullpath );
 			if ( entry.m_Header.version != COMPILED_CAPTION_VERSION )
@@ -2615,6 +2631,9 @@ void CHudCloseCaption::InitCaptionDictionary( const char *dbfile )
 			filesystem->Read( dirbuffer.Base(), directoryBytes, fh );
 			filesystem->Close( fh );
 
+#if defined( VALVE_BIG_ENDIAN )
+			swap.SwapFieldsToTargetEndian( (CaptionLookup_t *)dirbuffer.Base(), entry.m_Header.directorysize );
+#endif
 			entry.m_CaptionDirectory.CopyArray( (const CaptionLookup_t *)dirbuffer.PeekGet(), entry.m_Header.directorysize );
 			entry.m_CaptionDirectory.RedoSort( true );
 

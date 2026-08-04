@@ -1199,6 +1199,14 @@ void CBaseFileSystem::AddMapPackFile( const char *pPath, const char *pPathID, Se
 		memset( &header, 0, sizeof(dheader_t) );
 		m_Stats.nBytesRead += FS_fread( &header, sizeof( header ), fp );
 		m_Stats.nReads++;
+
+#if defined( VALVE_BIG_ENDIAN )
+		{
+			CByteswap swap;
+			swap.ActivateByteSwapping( true );
+			swap.SwapBufferToTargetEndian<int>( (int*)&header, (int*)&header, sizeof( dheader_t ) / sizeof( int ) );
+		}
+#endif
 	
 		if ( header.ident != IDBSPHEADER || header.version < MINBSPVERSION || header.version > BSPVERSION )
 		{

@@ -522,7 +522,6 @@ int ByteswapPHY( void *pDestBase, const void *pSrcBase, const int fileSize )
 
 		int srcIncrement = baseHdr->surfaceSize + sizeof(swapcompactsurfaceheader_t);
 		int destIncrement = srcIncrement;
-		bool bCopyToSrc = !g_bNativeSrc;
 
 		if ( baseHdr->vphysicsID != MAKEID('V','P','H','Y') )
 		{
@@ -533,13 +532,6 @@ int ByteswapPHY( void *pDestBase, const void *pSrcBase, const int fileSize )
 			{
 				srcIncrement = legacyHdr->byte_size + sizeof(int);
 				destIncrement = legacyHdr->byte_size + sizeof(swapcompactsurfaceheader_t);
-				bCopyToSrc = false;
-
-				if ( !g_bNativeSrc )
-				{
-					// src needs the size member to be native to load vcollides
-					Q_memcpy( pSrc, pDest, sizeof(int) );
-				}
 			}
 			else
 			{
@@ -547,12 +539,6 @@ int ByteswapPHY( void *pDestBase, const void *pSrcBase, const int fileSize )
 				Assert(0);
 				return 0;
 			}
-		}
-
-		if ( bCopyToSrc )
-		{
-			// src needs the native header data to load the vcollides
-			Q_memcpy( pSrc, pDest, sizeof(swapcompactsurfaceheader_t) );
 		}
 
 		pSrc += srcIncrement;
@@ -636,7 +622,7 @@ int ByteswapVVD( void *pDestBase, const void *pSrcBase, const int fileSize )
 
 	/** TANGENT DATA **/
 
-	if ( pHdr->tangentDataStart != 0 )
+	if ( SrcNative( &pHdr->tangentDataStart ) != 0 )
 	{
 		SET_INDEX_POINTERS( pData, pHdr, tangentDataStart )
 		WriteBuffer<float>( &pDataDest, &pDataSrc, 4 * SrcNative( &pHdr->numLODVertexes[0] ) );
@@ -939,7 +925,8 @@ int ByteswapIKRules( studiohdr_t *&pHdrSrc, int numikrules, int numFrames, byte 
 {
 	DECLARE_OBJECT_POINTERS( pIKRule, pData, mstudioikrule_t )
 
-	ITERATE_BLOCK( pIKRule, numikrules )
+	// numikrules is already in native format - don't use ITERATE_BLOCK (it would byte-swap it)
+	for ( int pIKRule_idx = 0; pIKRule_idx < numikrules; ++pIKRule_idx, ++pIKRule, ++pIKRuleSrc, ++pIKRuleDest )
 	{
 		WriteObjects<mstudioikrule_t>( pIKRuleDest, pIKRuleSrc );
 
@@ -954,14 +941,14 @@ int ByteswapIKRules( studiohdr_t *&pHdrSrc, int numikrules, int numFrames, byte 
 			totalerror += 2;
 
 		// Uncompressed - only found in some older models (shipped hl2)
-		if ( pIKRule->ikerrorindex )
+		if ( SrcNative( &pIKRule->ikerrorindex ) )
 		{
 			SET_INDEX_POINTERS_FIXUP( pData, pIKRule, ikerrorindex )
 			WriteObjects<mstudioikerror_t>( pDataDest, pDataSrc, totalerror );
 		}
 
 		// Compressed - all models since hl2
-		if ( pIKRule->compressedikerrorindex )
+		if ( SrcNative( &pIKRule->compressedikerrorindex ) )
 		{
 			SET_INDEX_POINTERS_FIXUP( pData, pIKRule, compressedikerrorindex )
 			WriteObjects<mstudiocompressedikerror_t>( pDataDest, pDataSrc );
@@ -991,7 +978,7 @@ int ByteswapIKRules( studiohdr_t *&pHdrSrc, int numikrules, int numFrames, byte 
 				}
 			}
 
-			if ( pIKRule->szattachmentindex )
+			if ( SrcNative( &pIKRule->szattachmentindex ) )
 			{
 				SET_INDEX_POINTERS( pData, pIKRule, szattachmentindex )
 				int size = strlen( (char*)pDataSrc ) + 1;
@@ -1300,7 +1287,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 	{
 		WriteObjects( pStudioBoneDest, pStudioBoneSrc );
 
-		if ( pStudioBone->procindex )
+		if ( SrcNative( &pStudioBone->procindex ) )
 		{
 			SET_INDEX_POINTERS_FIXUP( pData, pStudioBone, procindex )
 
@@ -1384,7 +1371,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 	{
 		WriteObjects( pAnimDescDest, pAnimDescSrc );
 
-		if ( pAnimDesc->animblock == -1 )
+		if ( SrcNative( &pAnimDesc->animblock ) == -1 )
 		{
 			// out of date model format
 			continue;
@@ -1392,9 +1379,9 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 
 		// section data can point to both internal and external blocks
 		int numsections = 0;
-		if ( pAnimDesc->sectionframes != 0 )
+		if ( SrcNative( &pAnimDesc->sectionframes ) != 0 )
 		{
-			numsections = pAnimDesc->numframes / pAnimDesc->sectionframes + 2;
+			numsections = SrcNative( &pAnimDesc->numframes ) / SrcNative( &pAnimDesc->sectionframes ) + 2;
 
 			SET_INDEX_POINTERS( pData, pAnimDesc, sectionindex )
 			DECLARE_OBJECT_POINTERS( pSection, pData, mstudioanimsections_t )
@@ -1402,7 +1389,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 			WriteObjects( pSectionDest, pSectionSrc, numsections );
 		}
 
-		if ( pAnimDesc->animblock == 0 )
+		if ( SrcNative( &pAnimDesc->animblock ) == 0 )
 		{
 			if ( numsections == 0 )
 			{
@@ -1411,11 +1398,12 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 			}
 			else
 			{
+				mstudioanimsections_t *pSectionData = (mstudioanimsections_t *)pDataSrc;
 				for ( int i = 0; i < numsections; ++i )
 				{
-					if ( pAnimDesc->pSection( i )->animblock == 0 )
+					if ( SrcNative( &pSectionData[i].animblock ) == 0 )
 					{
-						int index = pAnimDesc->pSection( i )->animindex;
+						int index = SrcNative( &pSectionData[i].animindex );
 
 						// Base address of the animation in the animblock
 						byte *pDataSrcAnim = (byte *)pAnimDescSrc + index;
@@ -1428,18 +1416,18 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 
 			/** IK RULES **/
 
-			if ( pAnimDesc->ikruleindex )
+			if ( SrcNative( &pAnimDesc->ikruleindex ) )
 			{
 				SET_INDEX_POINTERS_FIXUP( pData, pAnimDesc, ikruleindex )
 				DECLARE_OBJECT_POINTERS( pIKRule, pData, mstudioikrule_t )
 				
 				int numframes = SrcNative( &pAnimDesc->numframes );
-				ByteswapIKRules( pHdrSrc, pAnimDesc->numikrules, numframes, pDataSrc, pDataDest, fixedFileSize, fileSize );
+				ByteswapIKRules( pHdrSrc, SrcNative( &pAnimDesc->numikrules ), numframes, pDataSrc, pDataDest, fixedFileSize, fileSize );
 			}
 
 			/** LOCAL HIERARCHY **/
 
-			if ( pAnimDesc->localhierarchyindex )
+			if ( SrcNative( &pAnimDesc->localhierarchyindex ) )
 			{
 				SET_INDEX_POINTERS( pData, pAnimDesc, localhierarchyindex )
 				DECLARE_OBJECT_POINTERS( pLocalHierarchy, pData, mstudiolocalhierarchy_t )
@@ -1449,7 +1437,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 
 					/** COMPRESSED IK ERRORS **/
 
-					if ( pLocalHierarchy->localanimindex != 0 )
+					if ( SrcNative( &pLocalHierarchy->localanimindex ) != 0 )
 					{
 						// Calculate the number of ikerrors by converting the ikerror start and end float values to
 						// frame numbers. (See the generation of these values in simplify.cpp: ProcessIKRules()).
@@ -1468,7 +1456,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 						// Write the animvalues.
 						for ( int idx = 0; idx < 6; ++idx )
 						{
-							if ( pCompressed->offset[idx] )
+							if ( SrcNative( &pCompressed->offset[idx] ) )
 							{
 								byte *pAnimvalueSrc = pDataSrc + SrcNative( &pCompressed->offset[idx] );
 								byte *pAnimvalueDest = pDataDest + SrcNative( &pCompressed->offset[idx] );
@@ -1500,7 +1488,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 	SET_OBJECT_POINTERS( pAnimDesc, pData, mstudioanimdesc_t )
 	ITERATE_BLOCK( pAnimDesc, pHdr->numlocalanim )
 	{
-		if ( pAnimDesc->nummovements )
+		if ( SrcNative( &pAnimDesc->nummovements ) )
 		{
 			SET_INDEX_POINTERS_FIXUP( pData, pAnimDesc, movementindex )
 			WriteObjects<mstudiomovement_t>( pDataDest, pDataSrc, SrcNative( &pAnimDesc->nummovements ) );
@@ -1515,7 +1503,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 	SET_OBJECT_POINTERS( pAnimDesc, pData, mstudioanimdesc_t )
 	ITERATE_BLOCK( pAnimDesc, pHdr->numlocalanim )
 	{
-		if ( pAnimDesc->ikruleindex )
+		if ( SrcNative( &pAnimDesc->ikruleindex ) )
 		{
 			// Only need to write the data again if a fixup happens
 			byte *pTest = (byte*)pAnimDesc + SrcNative( &pAnimDesc->ikruleindex );
@@ -1540,14 +1528,14 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 					totalerror += 2;
 
 				// Uncompressed - only found in some older models (shipped hl2)
-				if ( pIKRule->ikerrorindex )
+				if ( SrcNative( &pIKRule->ikerrorindex ) )
 				{
 					SET_INDEX_POINTERS_FIXUP( pData, pIKRule, ikerrorindex )
 					WriteObjects<mstudioikerror_t>( pDataDest, pDataSrc, totalerror );
 				}
 
 				// Compressed - all models since hl2
-				if ( pIKRule->compressedikerrorindex )
+				if ( SrcNative( &pIKRule->compressedikerrorindex ) )
 				{
 					SET_INDEX_POINTERS_FIXUP( pData, pIKRule, compressedikerrorindex )
 					WriteObjects<mstudiocompressedikerror_t>( pDataDest, pDataSrc );
@@ -1557,7 +1545,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 					// Write the animvalues.
 					for ( int idx = 0; idx < 6; ++idx )
 					{
-						if ( pCompressed->offset[idx] )
+						if ( SrcNative( &pCompressed->offset[idx] ) )
 						{
 							byte *pAnimvalueSrc = pDataSrc + SrcNative( &pCompressed->offset[idx] );
 							byte *pAnimvalueDest = pDataDest + SrcNative( &pCompressed->offset[idx] );
@@ -1577,7 +1565,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 						}
 					}
 
-					if ( pIKRule->szattachmentindex )
+					if ( SrcNative( &pIKRule->szattachmentindex ) )
 					{
 						SET_INDEX_POINTERS( pData, pIKRule, szattachmentindex )
 						int size = strlen( (char*)pDataSrc ) + 1;
@@ -1596,28 +1584,30 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 	SET_OBJECT_POINTERS( pAnimDesc, pData, mstudioanimdesc_t )
 	ITERATE_BLOCK( pAnimDesc, pHdr->numlocalanim )
 	{
-		if ( pAnimDesc->pZeroFrameData( ) != NULL )
+		int zeroframeindex = SrcNative( &pAnimDesc->zeroframeindex );
+		if ( zeroframeindex != 0 )
 		{
-			int offset = pAnimDesc->pZeroFrameData( ) - (byte *)pAnimDesc;
+			int offset = zeroframeindex;
 
 			// Base address of the animation in the animblock
 			byte *pZeroFrameSrc = (byte *)pAnimDescSrc + offset;
 			byte *pZeroFrameDest = (byte *)pAnimDescDest + offset;
 
+			int zeroframecount = SrcNative( &pAnimDesc->zeroframecount );
 			SET_INDEX_POINTERS( pData, pHdr, boneindex )
 			SET_OBJECT_POINTERS( pStudioBone, pData, mstudiobone_t )
 			ITERATE_BLOCK( pStudioBone, pHdr->numbones )
 			{
-				if ( pStudioBone->flags & BONE_HAS_SAVEFRAME_POS )
+				if ( SrcNative( &pStudioBone->flags ) & BONE_HAS_SAVEFRAME_POS )
 				{
-					for ( int j = 0; j < pAnimDesc->zeroframecount; j++)
+					for ( int j = 0; j < zeroframecount; j++)
 					{
 						WriteBuffer<short>( &pZeroFrameDest, &pZeroFrameSrc, 3 );
 					}
 				}
-				if ( pStudioBone->flags & BONE_HAS_SAVEFRAME_ROT )
+				if ( SrcNative( &pStudioBone->flags ) & BONE_HAS_SAVEFRAME_ROT )
 				{
-					for ( int j = 0; j < pAnimDesc->zeroframecount; j++)
+					for ( int j = 0; j < zeroframecount; j++)
 					{
 						WriteBuffer<int64>( &pZeroFrameDest, &pZeroFrameSrc, 1 );
 					}
@@ -1636,7 +1626,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 
 		/** POSE KEYS **/
 
-		if ( pSequence->posekeyindex )
+		if ( SrcNative( &pSequence->posekeyindex ) )
 		{
 			SET_INDEX_POINTERS_FIXUP( pData, pSequence, posekeyindex )
 			WriteBuffer<float>( pDataDest, pDataSrc, SrcNative( &pSequence->groupsize[0] ) + SrcNative( &pSequence->groupsize[1] ) );
@@ -1669,7 +1659,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 
 		/** ANIMATION INDICES **/
 
-		if ( pSequence->animindexindex )
+		if ( SrcNative( &pSequence->animindexindex ) )
 		{
 			SET_INDEX_POINTERS( pData, pSequence, animindexindex )
 			WriteBuffer<short>( pDataDest, pDataSrc, SrcNative( &pSequence->groupsize[0] ) * SrcNative( &pSequence->groupsize[1] ) );
@@ -1721,7 +1711,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 			{
 				WriteObjects( pMeshDest, pMeshSrc );
 
-				if ( !pMesh->numflexes )
+				if ( !SrcNative( &pMesh->numflexes ) )
 					continue;
 
 				/** FLEXES **/
@@ -1862,7 +1852,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 
 	/** STUDIOHDR2 **/
 
-	if ( pHdr->studiohdr2index )
+	if ( SrcNative( &pHdr->studiohdr2index ) )
 	{
 		DECLARE_INDEX_POINTERS_FIXUP( pLocalData, pHdr, studiohdr2index )
 		DECLARE_OBJECT_POINTERS( pStudioHdr2, pLocalData, studiohdr2_t )
@@ -1876,7 +1866,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 
 			/** SRC BONE TRANSFORMS **/
 
-			if ( pStudioHdr2->numsrcbonetransform )
+			if ( SrcNative( &pStudioHdr2->numsrcbonetransform ) )
 			{
 				// Note, srcbonetransformindex is an offset from the start of the file, not the start of the studiohdr2
 				// as is the convention.  That's why the macros can't be used here.
@@ -1885,7 +1875,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 				WriteObjects<mstudiosrcbonetransform_t>( &pDataDest, &pDataSrc, SrcNative( &pStudioHdr2->numsrcbonetransform ) );
 			}
 
-			if ( pStudioHdr2->linearboneindex )
+			if ( SrcNative( &pStudioHdr2->linearboneindex ) )
 			{
 				SET_INDEX_POINTERS_FIXUP( pData, pStudioHdr2, linearboneindex )
 				DECLARE_OBJECT_POINTERS( pLinearBone, pData, mstudiolinearbone_t )
@@ -1922,7 +1912,7 @@ int ByteswapMDLFile( void *pDestBase, void *pSrcBase, const int fileSize )
 			}
 
 			/** BONE FLEX DRIVERS **/
-			if ( pStudioHdr2->m_nBoneFlexDriverIndex )
+			if ( SrcNative( &pStudioHdr2->m_nBoneFlexDriverIndex ) )
 			{
 				SET_INDEX_POINTERS_FIXUP( pData, pStudioHdr2, m_nBoneFlexDriverIndex )
 					DECLARE_OBJECT_POINTERS( pBoneFlexDriver, pData, mstudioboneflexdriver_t )
@@ -2554,7 +2544,7 @@ BEGIN_BYTESWAP_DATADESC( studiohdr2_t )
 	DEFINE_INDEX( sznameindex, FIELD_INTEGER ),
 	DEFINE_INDEX( m_nBoneFlexDriverCount, FIELD_INTEGER ),
 	DEFINE_INDEX( m_nBoneFlexDriverIndex, FIELD_INTEGER ),
-	DEFINE_ARRAY( reserved, FIELD_INTEGER, 56 ),
+	DEFINE_ARRAY( reserved, FIELD_INTEGER, 48 ),
 END_BYTESWAP_DATADESC()
 
 BEGIN_BYTESWAP_DATADESC( mstudiobone_t )
@@ -2901,7 +2891,7 @@ BEGIN_BYTESWAP_DATADESC( mstudiomodel_t )
 	DEFINE_FIELD( numeyeballs, FIELD_INTEGER ),
 	DEFINE_INDEX( eyeballindex, FIELD_INTEGER ),
 	DEFINE_EMBEDDED( vertexdata ),
-	DEFINE_ARRAY( unused, FIELD_INTEGER, 8 ),
+	DEFINE_ARRAY( unused, FIELD_INTEGER, 6 ),
 END_BYTESWAP_DATADESC()
 
 BEGIN_BYTESWAP_DATADESC( mstudio_modelvertexdata_t )
@@ -3056,7 +3046,11 @@ BEGIN_BYTESWAP_DATADESC( mstudiotexture_t )
 	DEFINE_FIELD( unused1, FIELD_INTEGER ),
 	DEFINE_FIELD( material, FIELD_INTEGER ),		// IMaterial*
 	DEFINE_FIELD( clientmaterial, FIELD_INTEGER ),	// void*
+#ifdef PLATFORM_64BITS
+	DEFINE_ARRAY( unused, FIELD_INTEGER, 8 ),
+#else
 	DEFINE_ARRAY( unused, FIELD_INTEGER, 10 ),
+#endif
 END_BYTESWAP_DATADESC()
 
 BEGIN_BYTESWAP_DATADESC( vertexFileHeader_t )
