@@ -691,6 +691,14 @@ void CNetworkStringTable::ParseUpdate( bf_read &buf, int entries )
 			pUserData = tempbuf;
 		}
 
+#if defined( VALVE_BIG_ENDIAN )
+		if ( !Q_strcmp( GetTableName(), "modelprecache" ) && nBytes > 0 )
+		{
+			Msg( "BE-DBG ParseUpdate table=%s entry=%d string='%s' userdata=%d bytes 0x%02x\n",
+				GetTableName(), entryIndex, pEntry ? pEntry : "(null)", nBytes, (int)tempbuf[0] );
+		}
+#endif
+
 		// Check if we are updating an old entry or adding a new one
 		if ( entryIndex < GetNumStrings() )
 		{

@@ -851,6 +851,16 @@ void CClientState::SetModel( int tableIndex )
 	const CPrecacheUserData *data = CL_GetPrecacheUserData( m_pModelPrecacheTable, tableIndex );
 
 	bool bLoadNow = ( data && ( data->flags & RES_PRELOAD ) ) || IsX360();
+#if defined( VALVE_BIG_ENDIAN )
+	if ( tableIndex == 1 )
+	{
+		int testLength = 0;
+		const void *raw = m_pModelPrecacheTable->GetStringUserData( tableIndex, &testLength );
+		Msg( "BE-DBG SetModel(%d) table=%p numstrings=%d name='%s' raw=%p rawlen=%d data=%p dataflags=%d bLoadNow=%d szLevelFile='%s'\n",
+			tableIndex, (void*)m_pModelPrecacheTable, m_pModelPrecacheTable->GetNumStrings(),
+			name, raw, testLength, (const void*)data, data ? (int)data->flags : -1, (int)bLoadNow, m_szLevelFileName );
+	}
+#endif
 	if ( CommandLine()->FindParm( "-nopreload" ) ||	CommandLine()->FindParm( "-nopreloadmodels" ))
 	{
 		bLoadNow = false;
