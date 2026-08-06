@@ -21,7 +21,15 @@
 //-----------------------------------------------------------------------------
 struct CPrecacheUserData
 {
+#if defined( VALVE_BIG_ENDIAN )
+	// The string table wire format (WriteBits/ReadBits) packs the value into the
+	// LOW bits of the byte (LSB-first), but GCC allocates a single-byte bitfield
+	// into the TOP bits on big-endian targets (MSVC keeps it in the low bits).
+	// Use a plain byte so the in-memory layout matches the wire format on BE.
+	unsigned char flags;
+#else
 	unsigned char flags : PRECACHE_USER_DATA_NUMBITS;
+#endif
 };
 
 #pragma pack()
