@@ -36,6 +36,9 @@ private:
 
 	const ADPCMWAVEFORMAT	*m_pFormat;
 	const ADPCMCOEFSET		*m_pCoefficients;
+#if defined( VALVE_BIG_ENDIAN )
+	ADPCMWAVEFORMAT			*m_pSwappedFormat;
+#endif
 
 	short					*m_pSamples;
 	int						m_sampleCount;
@@ -54,6 +57,9 @@ CAudioMixerWaveADPCM::CAudioMixerWaveADPCM( IWaveData *data ) : CAudioMixerWave(
 	m_sampleCount = 0;
 	m_samplePosition = 0;
 	m_offset = 0;
+#if defined( VALVE_BIG_ENDIAN )
+	m_pSwappedFormat = NULL;
+#endif
 
 	CAudioSourceWave &source = reinterpret_cast<CAudioSourceWave &>(m_pData->Source());
 
@@ -66,6 +72,32 @@ CAudioMixerWaveADPCM::CAudioMixerWaveADPCM( IWaveData *data ) : CAudioMixerWave(
 	m_pFormat = (const ADPCMWAVEFORMAT *)source.GetHeader();
 	if ( m_pFormat )
 	{
+#if defined( VALVE_BIG_ENDIAN )
+		// The header is stored in the file little-endian.  Make a native
+		// byte-swapped copy so the fields (wSamplesPerBlock, nChannels, and
+		// the coefficient table) can be read as host-endian.
+		int numCoef = LittleWord( m_pFormat->wNumCoef );
+		int headerSize = sizeof( WAVEFORMATEX ) + 4 + numCoef * sizeof( ADPCMCOEFSET );
+		m_pSwappedFormat = (ADPCMWAVEFORMAT *)new char[ headerSize ];
+		V_memcpy( m_pSwappedFormat, m_pFormat, headerSize );
+
+		m_pSwappedFormat->wfx.wFormatTag = LittleWord( m_pFormat->wfx.wFormatTag );
+		m_pSwappedFormat->wfx.nChannels = LittleWord( m_pFormat->wfx.nChannels );
+		m_pSwappedFormat->wfx.nSamplesPerSec = LittleDWord( m_pFormat->wfx.nSamplesPerSec );
+		m_pSwappedFormat->wfx.nAvgBytesPerSec = LittleDWord( m_pFormat->wfx.nAvgBytesPerSec );
+		m_pSwappedFormat->wfx.nBlockAlign = LittleWord( m_pFormat->wfx.nBlockAlign );
+		m_pSwappedFormat->wfx.wBitsPerSample = LittleWord( m_pFormat->wfx.wBitsPerSample );
+		m_pSwappedFormat->wfx.cbSize = LittleWord( m_pFormat->wfx.cbSize );
+		m_pSwappedFormat->wSamplesPerBlock = LittleWord( m_pFormat->wSamplesPerBlock );
+		m_pSwappedFormat->wNumCoef = LittleWord( m_pFormat->wNumCoef );
+		for ( int i = 0; i < numCoef; i++ )
+		{
+			m_pSwappedFormat->aCoef[i].iCoef1 = LittleShort( m_pFormat->aCoef[i].iCoef1 );
+			m_pSwappedFormat->aCoef[i].iCoef2 = LittleShort( m_pFormat->aCoef[i].iCoef2 );
+		}
+		m_pFormat = m_pSwappedFormat;
+#endif
+
 		m_pCoefficients = (ADPCMCOEFSET *)((char *)m_pFormat + sizeof(WAVEFORMATEX) + 4);
 
 		// create the decode buffer
@@ -85,6 +117,9 @@ CAudioMixerWaveADPCM::CAudioMixerWaveADPCM( IWaveData *data ) : CAudioMixerWave(
 CAudioMixerWaveADPCM::~CAudioMixerWaveADPCM( void )
 {
 	delete[] m_pSamples;
+#if defined( VALVE_BIG_ENDIAN )
+	delete[] m_pSwappedFormat;
+#endif
 }
 
 
@@ -126,6 +161,11 @@ void CAudioMixerWaveADPCM::DecompressBlockMono( short *pOut, const char *pIn, in
 	short data[3];
 	memcpy( data, pIn, sizeof(data) );
 	pIn += sizeof(data);
+#if defined( VALVE_BIG_ENDIAN )
+	data[0] = LittleShort( data[0] );
+	data[1] = LittleShort( data[1] );
+	data[2] = LittleShort( data[2] );
+#endif
 
 	int delta = data[0];
 	int samp1 = data[1];
@@ -233,6 +273,14 @@ void CAudioMixerWaveADPCM::DecompressBlockStereo( short *pOut, const char *pIn, 
 	{
 		samp2[i] = *((short *)pIn);
 	}
+#if defined( VALVE_BIG_ENDIAN )
+	for ( i = 0; i < 2; i++ )
+	{
+		delta[i] = LittleShort( delta[i] );
+		samp1[i] = LittleShort( samp1[i] );
+		samp2[i] = LittleShort( samp2[i] );
+	}
+#endif
 
 	// write out the initial samples (stored in reverse order)
 	*pOut++ = (short)samp2[0];	// left

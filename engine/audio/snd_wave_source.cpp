@@ -700,10 +700,10 @@ bool CAudioSourceWave::GetStartupData( void *dest, int destsize, int& bytesCopie
 				{
 					walk.ChunkRead( formatBuffer );
 					formatSize = walk.ChunkSize();
-					format = ((WAVEFORMATEX *)formatBuffer)->wFormatTag;
-					if( ((WAVEFORMATEX *)formatBuffer)->wBitsPerSample > 16)
+					format = LittleWord( ((WAVEFORMATEX *)formatBuffer)->wFormatTag );
+					if( LittleWord( ((WAVEFORMATEX *)formatBuffer)->wBitsPerSample ) > 16)
 					{
-						Warning("Unsupported %d-bit wave file %s\n", (int)((WAVEFORMATEX *)formatBuffer)->wBitsPerSample, pName);
+						Warning("Unsupported %d-bit wave file %s\n", (int)LittleWord( ((WAVEFORMATEX *)formatBuffer)->wBitsPerSample ), pName);
 					}
 				}
 			}
