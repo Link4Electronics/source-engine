@@ -1417,16 +1417,6 @@ bool CBaseClientState::ProcessCreateStringTable( SVC_CreateStringTable *msg )
 
 	COM_TimestampedLog( " CBaseClient::ProcessCreateStringTable(%s)-done", msg->m_szTableName );
 
-#if defined( VALVE_BIG_ENDIAN )
-	if ( !Q_strcmp( msg->m_szTableName, "modelprecache" ) )
-	{
-		Msg( "BE-DBG CreateStringTable '%s' maxEntries=%d numEntries=%d userDataFixed=%d userDataSize=%d userDataBits=%d consumed=%d msgLen=%d matched=%d\n",
-			msg->m_szTableName, msg->m_nMaxEntries, msg->m_nNumEntries, msg->m_bUserDataFixedSize,
-			msg->m_nUserDataSize, msg->m_nUserDataSizeBits, endbit - startbit, msg->m_nLength,
-			( endbit - startbit ) == msg->m_nLength );
-	}
-#endif
-
 	return ( endbit - startbit ) == msg->m_nLength;	
 }
 

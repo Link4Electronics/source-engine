@@ -1020,10 +1020,6 @@ void CL_RegisterResources( void )
 {
 	// All done precaching.
 	host_state.SetWorldModel( cl.GetModel( 1 ) );
-#if defined( VALVE_BIG_ENDIAN )
-	Msg( "BE-DBG CL_RegisterResources worldmodel=%p numstrings=%d\n", (void*)host_state.worldmodel,
-		cl.m_pModelPrecacheTable ? cl.m_pModelPrecacheTable->GetNumStrings() : -1 );
-#endif
 	if ( !host_state.worldmodel )
 	{
 		Host_Error( "CL_RegisterResources:  host_state.worldmodel/cl.GetModel( 1 )==NULL\n" );
