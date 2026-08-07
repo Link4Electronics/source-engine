@@ -139,6 +139,8 @@ struct dgamelump_internal_t
 static CUtlVector< dgamelump_internal_t > g_GameLumpDict;
 static char g_GameLumpFilename[128] = { 0 };
 
+extern int s_MapVersion;
+
 //void NotifyHunkBeginMapLoad( const char *pszMapName )
 //{
 //	Hunk_OnMapStart( 32*1024*1024 );
@@ -1001,10 +1003,24 @@ static void BSPLumpByteswap( int nLumpID, int nLumpVersion, void *pData, int nDa
 	case LUMP_LIGHTING:
 	case LUMP_LIGHTING_HDR:
 	case LUMP_PAKFILE:
+		break;
+
 	case LUMP_PHYSDISP:
+		// On-disk layout is one unsigned short dispCount, then a
+		// dataSize[dispCount] array of unsigned shorts, then an endian-neutral
+		// byte blob (see SwapPhysdispLump in utils/common/bsplib.cpp).
 		if ( nDataSize >= (int)sizeof( dphysdisp_t ) )
 		{
 			swap.SwapFieldsToTargetEndian<dphysdisp_t>( (dphysdisp_t*)pData, 1 );
+
+			dphysdisp_t *pDisp = (dphysdisp_t*)pData;
+			int nCount = pDisp->numDisplacements;
+			int nMaxCount = ( nDataSize - (int)sizeof( dphysdisp_t ) ) / (int)sizeof( unsigned short );
+			if ( nCount > nMaxCount )
+			{
+				nCount = nMaxCount;
+			}
+			swap.SwapBufferToTargetEndian<unsigned short>( (unsigned short*)( pDisp + 1 ), NULL, nCount );
 		}
 		break;
 
@@ -1150,10 +1166,12 @@ static void GameLumpDataByteswap( int lumpId, void *pData, int nDataSize )
 			case 4: nPropSize = sizeof( StaticPropLumpV4_t ); break;
 			case 5: nPropSize = sizeof( StaticPropLumpV5_t ); break;
 			case 6: nPropSize = sizeof( StaticPropLumpV6_t ); break;
-			case 7: nPropSize = sizeof( StaticPropLumpV7_t ); break;
+			case 7: // Version 7 static props were promoted to the version 10 layout (see CStaticPropMgr::UnserializeModels)
+			case 10:
+				nPropSize = ( s_MapVersion == 21 ) ? sizeof( StaticPropLumpV10_21_t ) : sizeof( StaticPropLumpV10_t );
+				break;
 			case 8: nPropSize = sizeof( StaticPropLumpV8_t ); break;
 			case 9: nPropSize = sizeof( StaticPropLumpV9_t ); break;
-			case 10: nPropSize = sizeof( StaticPropLumpV10_t ); break;
 			case 11: nPropSize = sizeof( StaticPropLumpV11_t ); break;
 			default: return;
 		}
@@ -1169,10 +1187,15 @@ static void GameLumpDataByteswap( int lumpId, void *pData, int nDataSize )
 				case 4: swap.SwapFieldsToTargetEndian<StaticPropLumpV4_t>( (StaticPropLumpV4_t*)pCursor, nPropCount ); break;
 				case 5: swap.SwapFieldsToTargetEndian<StaticPropLumpV5_t>( (StaticPropLumpV5_t*)pCursor, nPropCount ); break;
 				case 6: swap.SwapFieldsToTargetEndian<StaticPropLumpV6_t>( (StaticPropLumpV6_t*)pCursor, nPropCount ); break;
-				case 7: swap.SwapFieldsToTargetEndian<StaticPropLumpV7_t>( (StaticPropLumpV7_t*)pCursor, nPropCount ); break;
+				case 7: // Version 7 static props were promoted to the version 10 layout (see CStaticPropMgr::UnserializeModels)
+				case 10:
+					if ( s_MapVersion == 21 )
+						swap.SwapFieldsToTargetEndian<StaticPropLumpV10_21_t>( (StaticPropLumpV10_21_t*)pCursor, nPropCount );
+					else
+						SwapStaticPropLumpV10( swap, (StaticPropLumpV10_t*)pCursor, nPropCount );
+					break;
 				case 8: swap.SwapFieldsToTargetEndian<StaticPropLumpV8_t>( (StaticPropLumpV8_t*)pCursor, nPropCount ); break;
 				case 9: swap.SwapFieldsToTargetEndian<StaticPropLumpV9_t>( (StaticPropLumpV9_t*)pCursor, nPropCount ); break;
-				case 10: SwapStaticPropLumpV10( swap, (StaticPropLumpV10_t*)pCursor, nPropCount ); break;
 				case 11: swap.SwapFieldsToTargetEndian<StaticPropLumpV11_t>( (StaticPropLumpV11_t*)pCursor, nPropCount ); break;
 			}
 		}

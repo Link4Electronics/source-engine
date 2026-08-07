@@ -7,6 +7,7 @@
 //===========================================================================//
 #include "quakedef.h"
 #include "bspfile.h"
+#include "byteswap.h"
 #include "host.h"
 #include "sys.h"
 #include "filesystem_engine.h"
@@ -139,6 +140,12 @@ int CMapListItem::CheckFSHeaderVersion( char const *name )
 	{
 		g_pFileSystem->Read( &header, sizeof( header ), fp );
 		g_pFileSystem->Close( fp );
+
+#if defined( VALVE_BIG_ENDIAN )
+		CByteswap swap;
+		swap.ActivateByteSwapping( true );
+		swap.SwapFieldsToTargetEndian<dheader_t>( &header, 1 );
+#endif
 	}
 
 	return ( header.version >= MINBSPVERSION && header.version <= BSPVERSION ) ? VALID : INVALID;

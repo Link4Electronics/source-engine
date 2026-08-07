@@ -9,6 +9,7 @@
 #include "bspfile.h"
 #include "filesystem.h"
 #include "filesystem_engine.h"
+#include "byteswap.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -162,6 +163,12 @@ bool CRC_MapFile(CRC32_t *crcvalue, const char *pszFileName)
 		return false;
 	}
 
+#if defined( VALVE_BIG_ENDIAN )
+	CByteswap swap;
+	swap.ActivateByteSwapping( true );
+	swap.SwapFieldsToTargetEndian<dheader_t>( &header, 1 );
+#endif
+
 	i = header.version;
 	if ( i < MINBSPVERSION || i > BSPVERSION )
 	{
@@ -247,6 +254,12 @@ bool MD5_MapFile(MD5Value_t *md5value, const char *pszFileName)
 		g_pFileSystem->Close(fp);
 		return false;
 	}
+
+#if defined( VALVE_BIG_ENDIAN )
+	CByteswap swap;
+	swap.ActivateByteSwapping( true );
+	swap.SwapFieldsToTargetEndian<dheader_t>( &header, 1 );
+#endif
 
 	i = header.version;
 	if ( i < MINBSPVERSION || i > BSPVERSION )
