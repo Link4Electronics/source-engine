@@ -851,6 +851,10 @@ void CClientState::SetModel( int tableIndex )
 	const CPrecacheUserData *data = CL_GetPrecacheUserData( m_pModelPrecacheTable, tableIndex );
 
 	bool bLoadNow = ( data && ( data->flags & RES_PRELOAD ) ) || IsX360();
+	if ( tableIndex == 1 && data == NULL )
+	{
+		bLoadNow = true;
+	}
 	if ( CommandLine()->FindParm( "-nopreload" ) ||	CommandLine()->FindParm( "-nopreloadmodels" ))
 	{
 		bLoadNow = false;
